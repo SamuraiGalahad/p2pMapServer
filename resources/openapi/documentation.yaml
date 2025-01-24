@@ -1,0 +1,8 @@
+openapi: "3.1.0"
+info:
+  title: "p2pMapServer API"
+  description: "p2pMapServer API"
+  version: "1.0.0"
+servers:
+- url: "https://p2pMapServer"
+paths: {}
