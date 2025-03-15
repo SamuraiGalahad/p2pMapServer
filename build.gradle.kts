@@ -43,7 +43,6 @@ dependencies {
     implementation("org.postgresql:postgresql:$postgres_version")
     implementation("com.h2database:h2:$h2_version")
     implementation("io.github.flaxoos:ktor-server-kafka:2.1.2")
-    implementation("io.github.damirdenis-tudor:ktor-server-rabbitmq:1.3.0")
     implementation("io.ktor:ktor-network-tls")
     implementation("io.ktor:ktor-server-websockets")
     implementation("io.github.flaxoos:ktor-server-rate-limiting:2.1.2")
@@ -56,4 +55,8 @@ dependencies {
     implementation("io.ktor:ktor-server-config-yaml")
     testImplementation("io.ktor:ktor-server-test-host")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
+    implementation("org.hibernate:hibernate-core:6.4.2.Final")
+    implementation("org.hibernate:hibernate-entitymanager:5.6.15.Final")
+    implementation("org.postgresql:postgresql:42.7.1")
+    implementation("javax.persistence:javax.persistence-api:2.2")
 }

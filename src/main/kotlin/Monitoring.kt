@@ -5,9 +5,9 @@ import com.auth0.jwt.algorithms.Algorithm
 import com.fasterxml.jackson.databind.*
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import dev.inmo.krontab.builder.*
-import io.github.damir.denis.tudor.ktor.server.rabbitmq.RabbitMQ
-import io.github.damir.denis.tudor.ktor.server.rabbitmq.dsl.*
-import io.github.damir.denis.tudor.ktor.server.rabbitmq.rabbitMQ
+//import io.github.damir.denis.tudor.ktor.server.rabbitmq.RabbitMQ
+//import io.github.damir.denis.tudor.ktor.server.rabbitmq.dsl.*
+//import io.github.damir.denis.tudor.ktor.server.rabbitmq.rabbitMQ
 import io.github.flaxoos.ktor.server.plugins.kafka.Kafka
 import io.github.flaxoos.ktor.server.plugins.kafka.MessageTimestampType
 import io.github.flaxoos.ktor.server.plugins.kafka.TopicName

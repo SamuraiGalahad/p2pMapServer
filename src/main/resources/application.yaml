@@ -1,9 +1,8 @@
 ktor:
   application:
-    modules:
-      - trotech.ApplicationKt.module
+
   deployment:
-    port: 8080
+    port: 8000
 jwt:
   domain: "https://jwt-provider-domain/"
   audience: "jwt-audience"
