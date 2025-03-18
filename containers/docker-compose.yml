@@ -1,0 +1,45 @@
+version: '3.7'
+
+services:
+  db:
+    image: postgres:13
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - app-network
+    ports:
+      - "80:80"
+
+  redis:
+    image: redis:6
+    container_name: redis
+    networks:
+      - app-network
+    ports:
+      - "6379:6379"
+
+volumes:
+  pg_data:
+  pgadmin_data:
+
+networks:
+  app-network:
+    driver: bridge

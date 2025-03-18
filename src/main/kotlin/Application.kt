@@ -1,30 +1,35 @@
 package trotech
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.auth0.jwt.JWT
+import com.auth0.jwt.algorithms.Algorithm
 import dto.*
 import dto.entities.Peer
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
+import io.ktor.server.application.ApplicationCallPipeline.ApplicationPhase.Plugins
+import io.ktor.server.auth.*
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.html.*
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import java.util.*
+import io.ktor.server.plugins.cors.*
 import kotlinx.html.*
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlin.collections.ArrayList
+import io.ktor.server.auth.jwt.*
+import io.ktor.server.sessions.*
+import kotlinx.serialization.Serializable
+import service.usecase.stability.NetworkBalancer
 
 object UUIDSerializer : KSerializer<UUID> {
     override val descriptor = PrimitiveSerialDescriptor("UUID", PrimitiveKind.STRING)
@@ -38,11 +43,42 @@ object UUIDSerializer : KSerializer<UUID> {
     }
 }
 
+val dictForMap = mutableMapOf<String, MutableSet<Peer>>()
+
+//todo: сделать очистку по времени
+val peers = mutableMapOf<UUID, AnnounceInfo>()
+
+val mapsInfo = mutableMapOf<String,MapInfo>()
+
+val networkBalancer = NetworkBalancer()
+
+val mapsPeersImagesMatrix = mutableMapOf<String, MutableMap<String, MutableSet<Peer>>>()
+
+val secret = "my_secret_key"
+
+val tokens = ArrayList<String>()
+
+
+
+@Serializable
+data class UserSession(val token: String)
 
 fun main() {
     embeddedServer(Netty, port = 8000) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
+        }
+        install(Authentication) {
+            jwt("auth-jwt") {
+                realm = "ktor-server"
+                verifier(JWT.require(Algorithm.HMAC256(secret)).withIssuer("ktor-app").build())
+            }
+        }
+        install(Sessions) {
+            cookie<UserSession>("SESSION") {
+                cookie.httpOnly = true
+                cookie.maxAgeInSeconds = 3600
+            }
         }
         routing {
             /**
@@ -64,7 +100,6 @@ fun main() {
                     return@post
                 }
 
-                // берем карты от пира
 
                 // если идентификатор пира передаваемый не совпадает с ид в конструкции: возвращаем ошибку
                 if (uuid != parsedMapInfo.uuid) {
@@ -125,7 +160,8 @@ fun main() {
                 call.respond(HttpStatusCode.OK, "Peer announced successfully")
             }
 
-            get("/maps/") {
+            get("/maps") {
+
             }
 
             //todo: поменять на ручку maps
@@ -176,6 +212,9 @@ fun main() {
                 val password = params["password"]
 
                 if (username == "admin" && password == "password") {
+                    val token = JWT.create().withIssuer("ktor-app").withClaim("username", username).sign(Algorithm.HMAC256(secret))
+                    call.sessions.set(UserSession(token))
+                    tokens.add(token)
                     call.respondRedirect("/dashboard")
                 } else {
                     call.respondHtml(HttpStatusCode.Unauthorized) {
@@ -188,7 +227,12 @@ fun main() {
                 }
             }
 
+
             get("/dashboard") {
+                val session = call.sessions.get<UserSession>()
+                if (tokens.contains(session?.token)) {
+                    return@get
+                }
                 call.respondHtml(HttpStatusCode.OK) {
                     head {
                         title("P2P Dashboard")
@@ -197,26 +241,42 @@ fun main() {
                         h1 { +"Статистика P2P сети" }
                         table {
                             tr {
-                                th { +"Узел" }
-                                th { +"IP-адрес" }
+                                th { +"Идентификатор" }
                                 th { +"Статус" }
-                                th { +"Количество соединений" }
+                                th { +"Количество слоёв" }
                             }
-                            tr {
-                                td { +"Node-1" }
-                                td { +"192.168.1.10" }
-                                td { +"Активен" }
-                                td { +"12" }
-                            }
-                            tr {
-                                td { +"Node-2" }
-                                td { +"192.168.1.11" }
-                                td { +"Не в сети" }
-                                td { +"0" }
+
+                            peers.keys.forEach {
+                                key ->
+                                tr {
+                                    th {
+                                        +peers[key]?.uuid.toString()
+                                    }
+                                    th {
+                                        +"Активный"
+                                    }
+                                    th {
+                                        +peers[key]?.layers?.size.toString()
+                                    }
+                                }
                             }
                         }
-                        a(href = "/") { +"Выйти" }
+                        a(href = "/doAction?action=logout") { +"Выйти" }
                     }
+                }
+            }
+
+            get("/doAction") {
+                val action = call.request.queryParameters["action"]
+                when (action) {
+                    "logout" -> {
+                        val session = call.sessions.get<UserSession>()
+                        if (session != null) {
+                            tokens.remove(session.token)
+                        }
+                        call.respondText("Вы вышли!", ContentType.Text.Plain)
+                    }
+                    else -> call.respond(HttpStatusCode.BadRequest, "Неизвестное действие")
                 }
             }
 
@@ -228,7 +288,7 @@ fun main() {
 
             get("/peers") {
                 val fileName = call.parameters["fileName"] ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing file hash")
-                val result = selectPeersByHash(fileName)
+                val result = networkBalancer.selectPeersByHash(fileName)
 
                 val m = mapsPeersImagesMatrix
 
@@ -240,66 +300,4 @@ fun main() {
             }
         }
     }.start(wait = true)
-}
-
-val mapper = jacksonObjectMapper()
-
-val dictForMap = mutableMapOf<String, MutableSet<Peer>>()
-
-//todo: сделать очистку по времени
-val peers = mutableMapOf<UUID, AnnounceInfo>()
-
-val mapsInfo = mutableMapOf<String,MapInfo>()
-
-val mapsPeersImagesMatrix = mutableMapOf<String, MutableMap<String, MutableSet<Peer>>>()
-
-
-fun selectPeersByHash(fileHash: String): DownloadDistributionMap? {
-    // получили пиров, которые владеют картой
-    val peersId = dictForMap[fileHash]?.toList() ?: ArrayList<Peer>()
-
-    if (peersId.isEmpty()) {
-        return null
-    }
-
-    val mapInfo = mapsInfo[fileHash] ?: return null
-
-    val result = DownloadDistributionMap(mapInfo.name, arrayListOf())
-
-    val connectionCodes = mutableMapOf<UUID, String>()
-
-    for (key in mapInfo.matrix.keys) {
-        val rm = ResponceMatrix(key, arrayListOf())
-        for (image in mapInfo.matrix[key]!!) {
-            val localImageKey = "${key}:${image}"
-
-            println(image)
-
-            val peer = mapsPeersImagesMatrix.get(fileHash)?.get(localImageKey)?.toList()?.random()
-
-            var connectionCode = UUID.randomUUID().toString()
-
-            if (connectionCodes.containsKey(peer?.uuid)) {
-                connectionCode = connectionCodes.get(peer?.uuid).toString()
-            } else {
-                if (peer != null) {
-                    connectionCodes.put(peer.uuid, connectionCode)
-                }
-            }
-
-
-            val responceImage =
-                peer?.let {
-                    ResponceImage(image.split(":")[0].toInt(), image.split(":")[1].toInt(), connectionCode,
-                        it
-                    )
-                }
-            if (responceImage != null) {
-                rm.images.add(responceImage)
-            }
-        }
-        result.loadMatrix.add(rm)
-    }
-
-    return result
 }

@@ -1,0 +1,75 @@
+{
+	"info": {
+		"_postman_id": "1115d91f-d238-4967-a036-0d531eac3ed5",
+		"name": "p2pServer",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "31087661"
+	},
+	"item": [
+		{
+			"name": "http://0.0.0.0:8000/announce",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "uuid",
+						"value": "1",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"uuid\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"layers\": [\n    {\n      \"name\": \"Layer 1\",\n      \"type\": \"Base\",\n      \"matrix\": [\n        {\n          \"level\": 1,\n          \"images\": [\n            {\n              \"col\": 0,\n              \"row\": 0,\n              \"type\": \"PNG\"\n            },\n            {\n              \"col\": 1,\n              \"row\": 0,\n              \"type\": \"JPEG\"\n            }\n          ]\n        },\n        {\n          \"level\": 2,\n          \"images\": [\n            {\n              \"col\": 0,\n              \"row\": 1,\n              \"type\": \"PNG\"\n            }\n          ]\n        }\n      ]\n    },\n    {\n      \"name\": \"Layer 2\",\n      \"type\": \"Overlay\",\n      \"matrix\": [\n        {\n          \"level\": 3,\n          \"images\": [\n            {\n              \"col\": 2,\n              \"row\": 2,\n              \"type\": \"SVG\"\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://0.0.0.0:8000/announce",
+					"protocol": "http",
+					"host": [
+						"0",
+						"0",
+						"0",
+						"0"
+					],
+					"port": "8000",
+					"path": [
+						"announce"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:8000/peers",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/peers?fileName=Layer 1",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"peers"
+					],
+					"query": [
+						{
+							"key": "fileName",
+							"value": "Layer 1"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

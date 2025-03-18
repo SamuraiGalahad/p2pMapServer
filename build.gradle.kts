@@ -32,6 +32,10 @@ tasks.withType<KotlinCompile> {
     kotlinOptions.freeCompilerArgs += listOf("-Xdebug", "-Xno-optimize")
 }
 
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+}
+
 dependencies {
     implementation("io.ktor:ktor-server-core")
     implementation("io.ktor:ktor-server-auth")
@@ -61,6 +65,7 @@ dependencies {
     implementation("io.ktor:ktor-server-netty")
     implementation("ch.qos.logback:logback-classic:$logback_version")
     implementation("io.ktor:ktor-server-config-yaml")
+    testImplementation("io.kotest:kotest-runner-junit5")
     testImplementation("io.ktor:ktor-server-test-host")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
     implementation("org.hibernate:hibernate-core:6.4.2.Final")
@@ -71,4 +76,5 @@ dependencies {
     implementation("org.ktorm:ktorm-core:3.6.0")
     implementation("io.ktor:ktor-client-content-negotiation")
     implementation("io.ktor:ktor-server-status-pages")
+    implementation("io.ktor:ktor-server-cors")
 }
