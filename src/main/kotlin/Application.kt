@@ -1,24 +1,29 @@
 package trotech
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import dto.*
+import dto.entities.Peer
 import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.application.*
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.html.*
 import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.util.*
-import kotlinx.serialization.Serializable
 import java.util.*
 import kotlinx.html.*
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.JsonObject
-import java.security.MessageDigest
+import kotlinx.serialization.json.Json
 import kotlin.collections.ArrayList
 
 object UUIDSerializer : KSerializer<UUID> {
@@ -33,117 +38,92 @@ object UUIDSerializer : KSerializer<UUID> {
     }
 }
 
-@Serializable
-data class Peer(
-    @Serializable(with = UUIDSerializer::class)
-    val uuid: UUID,
-    val ip: String,
-    val port: Int
-)
-
-@Serializable
-data class Torrent(
-    val name: String,
-    val peers: MutableList<Peer> = mutableListOf()
-)
-
-@Serializable
-data class MapInfo(val name: String, val peers: MutableList<Peer>)
-
-@Serializable
-data class Image(
-    val n: Int,
-    val m: Int,
-    val type: String
-)
-
-@Serializable
-data class Matrix(
-    val level: Int,
-    val images: List<Image>
-)
-
-@Serializable
-data class Layer(
-    val name: String,
-    val type: String,
-    val matrix: Matrix
-)
-
-@Serializable
-data class AnnounceInfo(
-    @Serializable(with = UUIDSerializer::class)
-    val uuid: UUID,
-    val layers: List<Layer>
-)
-
-@Serializable
-data class PeerInfo(
-    val connectionCodes: List<String>,
-    val udpPort: Int = 5000
-)
-
-val mapper = jacksonObjectMapper()
-
-val dictForMap = mutableMapOf<String, MutableSet<Peer>>()
 
 fun main() {
-
-    val mapsInfo = mutableMapOf<UUID,MapInfo>()
-
     embeddedServer(Netty, port = 8000) {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true })
+        }
         routing {
             /**
              * Сервер получает информацию о новом участнике в сети
              */
             post("/announce") {
-                val params = call.receiveParameters()
+                val parsedMapInfo = call.receive<AnnounceInfo>()
 
-                val uuid = UUID.fromString(params["uuid"])
-                val mapInfo = params["info"]
+                // собираем параметры для определения пира
+                val uuid = parsedMapInfo.uuid
                 val ip = call.request.local.remoteHost
                 val port = call.request.local.remotePort
 
+                val peer = Peer(0, uuid, ip, port)
 
+                // если не передают идентификаторы пира: возвращаем ошибку
                 if (uuid == null || port == null) {
                     call.respondText(HttpStatusCode.BadRequest.toString())
                     return@post
                 }
 
-                val parsedMapInfo = mapper.readValue(mapInfo, AnnounceInfo::class.java)
+                // берем карты от пира
 
+                // если идентификатор пира передаваемый не совпадает с ид в конструкции: возвращаем ошибку
                 if (uuid != parsedMapInfo.uuid) {
                     call.respondText(HttpStatusCode.BadRequest.toString())
                     return@post
                 }
 
+                // берем список карт
                 val layers = parsedMapInfo.layers
 
+                // соотносим идентификатор карт к пирам
                 for (layer in layers) {
                     if (dictForMap.containsKey(layer.name)) {
-                        dictForMap[layer.name]?.add(Peer(uuid, ip, port))
+                        dictForMap[layer.name]?.add(peer)
+                    } else {
+                        dictForMap[layer.name] = mutableSetOf(peer)
+                    }
+
+
+                    if (mapsInfo.containsKey(layer.name)) {
+                        for (matrix in layer.matrix) {
+                            for (image in matrix.images) {
+                                mapsInfo[layer.name]?.addImageToMatrix(image, matrix.level)
+                            }
+                        }
+                    } else {
+                        mapsInfo[layer.name] = MapInfo(layer.name, arrayListOf())
+                        for (matrix in layer.matrix) {
+                            for (image in matrix.images) {
+                                mapsInfo[layer.name]?.addImageToMatrix(image, matrix.level)
+                            }
+                        }
+                    }
+
+                    var name = layer.name
+                    var matrix = layer.matrix
+
+                    for (mat in matrix) {
+                        for (image in mat.images) {
+                            val key = "${mat.level}:${image.col}:${image.row}"
+                            if (mapsPeersImagesMatrix.containsKey(name)) {
+                                if (mapsPeersImagesMatrix[name]?.containsKey(key) == true) {
+                                    mapsPeersImagesMatrix[name]?.get(key)?.add(peer)
+                                } else {
+                                    mapsPeersImagesMatrix[name]?.set(key, mutableSetOf(peer))
+                                }
+                            } else {
+                                mapsPeersImagesMatrix[name] = mutableMapOf(Pair(key, mutableSetOf(peer)))
+                            }
+                        }
                     }
                 }
 
+
+
+                peers[parsedMapInfo.uuid] = parsedMapInfo
+
                 call.respond(HttpStatusCode.OK, "Peer announced successfully")
             }
-
-//            get("/peers") {
-//                val infoHash = call.request.queryParameters["infoHash"]
-//
-//                if (infoHash == null) {
-//                    call.respond(HttpStatusCode.BadRequest, "Missing infoHash")
-//                    return@get
-//                }
-//
-//                val torrent = torrents[infoHash]
-//
-//                if (torrent == null) {
-//                    call.respondText("Torrent not found")
-//                    return@get
-//                }
-//                call.respondText(torrent.peers?.get(0).toString())
-//            }
 
             get("/maps/") {
             }
@@ -248,13 +228,78 @@ fun main() {
 
             get("/peers") {
                 val fileName = call.parameters["fileName"] ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing file hash")
-                val peers = selectPeersByHash(fileName)
-                call.respond(peers)
+                val result = selectPeersByHash(fileName)
+
+                val m = mapsPeersImagesMatrix
+
+                if (result == null) {
+                    call.respondText(HttpStatusCode.BadRequest.toString())
+                    return@get
+                }
+                call.respond(result)
             }
         }
     }.start(wait = true)
 }
 
-fun selectPeersByHash(fileHash: String): List<Peer> {
-    return dictForMap[fileHash]?.toList() ?: ArrayList<Peer>()
+val mapper = jacksonObjectMapper()
+
+val dictForMap = mutableMapOf<String, MutableSet<Peer>>()
+
+//todo: сделать очистку по времени
+val peers = mutableMapOf<UUID, AnnounceInfo>()
+
+val mapsInfo = mutableMapOf<String,MapInfo>()
+
+val mapsPeersImagesMatrix = mutableMapOf<String, MutableMap<String, MutableSet<Peer>>>()
+
+
+fun selectPeersByHash(fileHash: String): DownloadDistributionMap? {
+    // получили пиров, которые владеют картой
+    val peersId = dictForMap[fileHash]?.toList() ?: ArrayList<Peer>()
+
+    if (peersId.isEmpty()) {
+        return null
+    }
+
+    val mapInfo = mapsInfo[fileHash] ?: return null
+
+    val result = DownloadDistributionMap(mapInfo.name, arrayListOf())
+
+    val connectionCodes = mutableMapOf<UUID, String>()
+
+    for (key in mapInfo.matrix.keys) {
+        val rm = ResponceMatrix(key, arrayListOf())
+        for (image in mapInfo.matrix[key]!!) {
+            val localImageKey = "${key}:${image}"
+
+            println(image)
+
+            val peer = mapsPeersImagesMatrix.get(fileHash)?.get(localImageKey)?.toList()?.random()
+
+            var connectionCode = UUID.randomUUID().toString()
+
+            if (connectionCodes.containsKey(peer?.uuid)) {
+                connectionCode = connectionCodes.get(peer?.uuid).toString()
+            } else {
+                if (peer != null) {
+                    connectionCodes.put(peer.uuid, connectionCode)
+                }
+            }
+
+
+            val responceImage =
+                peer?.let {
+                    ResponceImage(image.split(":")[0].toInt(), image.split(":")[1].toInt(), connectionCode,
+                        it
+                    )
+                }
+            if (responceImage != null) {
+                rm.images.add(responceImage)
+            }
+        }
+        result.loadMatrix.add(rm)
+    }
+
+    return result
 }
