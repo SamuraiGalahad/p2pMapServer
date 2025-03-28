@@ -10,7 +10,7 @@ import trotech.mapsPeersImagesMatrix
 import java.util.*
 import kotlin.collections.ArrayList
 
-class NetworkBalancer {
+class NetworkPeerService {
     fun selectPeersByHash(fileHash: String): DownloadDistributionMap? {
         // получили пиров, которые владеют картой
         val peersId = dictForMap[fileHash]?.toList() ?: ArrayList<Peer>()

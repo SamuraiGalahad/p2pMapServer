@@ -77,4 +77,5 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation")
     implementation("io.ktor:ktor-server-status-pages")
     implementation("io.ktor:ktor-server-cors")
+    implementation("redis.clients:jedis:5.0.2")
 }

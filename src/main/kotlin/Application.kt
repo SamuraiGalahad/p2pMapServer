@@ -2,14 +2,13 @@ package trotech
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
+import dao.database.DatabaseFactory
 import dto.*
 import dto.entities.Peer
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.application.ApplicationCallPipeline.ApplicationPhase.Plugins
 import io.ktor.server.auth.*
-import io.ktor.server.engine.embeddedServer
 import io.ktor.server.html.*
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.*
@@ -17,7 +16,6 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import java.util.*
-import io.ktor.server.plugins.cors.*
 import kotlinx.html.*
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -27,9 +25,16 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlin.collections.ArrayList
 import io.ktor.server.auth.jwt.*
+import io.ktor.server.engine.*
 import io.ktor.server.sessions.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import service.usecase.stability.NetworkBalancer
+import service.usecase.stability.NetworkPeerService
+import trotech.dao.redis.PeersRepository
+import trotech.service.usecase.xml.MessageWMTSFormatter
 
 object UUIDSerializer : KSerializer<UUID> {
     override val descriptor = PrimitiveSerialDescriptor("UUID", PrimitiveKind.STRING)
@@ -50,7 +55,7 @@ val peers = mutableMapOf<UUID, AnnounceInfo>()
 
 val mapsInfo = mutableMapOf<String,MapInfo>()
 
-val networkBalancer = NetworkBalancer()
+val networkBalancer = NetworkPeerService()
 
 val mapsPeersImagesMatrix = mutableMapOf<String, MutableMap<String, MutableSet<Peer>>>()
 
@@ -58,15 +63,35 @@ val secret = "my_secret_key"
 
 val tokens = ArrayList<String>()
 
-
+val redisRepository = PeersRepository()
 
 @Serializable
 data class UserSession(val token: String)
 
 fun main() {
-    embeddedServer(Netty, port = 8000) {
+
+
+    val server = embeddedServer(Netty, port = 8000) {
+        environment.monitor.subscribe(ApplicationStopping) {
+            println("Stopping")
+        }
+        launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(20_000)
+                redisRepository.cleanInactivePeersTask.run()
+            }
+        }
+
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
+        }
+
+
+        val shutdown = ShutDownUrl("") { 1 }
+
+        install(ShutDownUrl.ApplicationCallPlugin) {
+            shutDownUrl = "/shutdown"
+            exitCodeSupplier = { 0 }
         }
         install(Authentication) {
             jwt("auth-jwt") {
@@ -80,6 +105,9 @@ fun main() {
                 cookie.maxAgeInSeconds = 3600
             }
         }
+
+        DatabaseFactory.init()
+
         routing {
             /**
              * Сервер получает информацию о новом участнике в сети
@@ -93,6 +121,8 @@ fun main() {
                 val port = call.request.local.remotePort
 
                 val peer = Peer(0, uuid, ip, port)
+
+                redisRepository.addPeerId(uuid)
 
                 // если не передают идентификаторы пира: возвращаем ошибку
                 if (uuid == null || port == null) {
@@ -161,10 +191,29 @@ fun main() {
             }
 
             get("/maps") {
+                var line = ""
 
+                for (name in mapsInfo.keys) {
+                    line += "${name}\n";
+                }
+
+                call.respondText(line)
             }
 
-            //todo: поменять на ручку maps
+            // получить активных пиров и их колличество
+            get("/active_peers") {
+                var line = "Active peers\n"
+                val activePeers = redisRepository.getActivePeers()
+
+                for (peer in activePeers) {
+                    line += "${peer}\n";
+                }
+
+                line += "Всего:${activePeers.size}\n"
+
+                call.respondText(line)
+            }
+
             get("/home") {
 
                 val keys = mapsInfo.iterator()
@@ -261,7 +310,8 @@ fun main() {
                                 }
                             }
                         }
-                        a(href = "/doAction?action=logout") { +"Выйти" }
+                        a(href = "/doAction?action=logout") { +"Выйти\n" }
+                        a(href = "/doAction?action=shutdown") { +"Выключить сервер\n" }
                     }
                 }
             }
@@ -276,8 +326,16 @@ fun main() {
                         }
                         call.respondText("Вы вышли!", ContentType.Text.Plain)
                     }
+                    "shutdown" -> {
+                        call.respondText("Выключение сервера", ContentType.Text.Plain)
+                        shutdown.doShutdown(call)
+                    }
                     else -> call.respond(HttpStatusCode.BadRequest, "Неизвестное действие")
                 }
+            }
+
+            get("/delete_peer") {
+                val peerUUID = UUID.fromString(call.parameters["uuid"])
             }
 
             get("/peer_info") {
@@ -298,6 +356,14 @@ fun main() {
                 }
                 call.respond(result)
             }
+
+            post("/layer") {
+                val xml = call.receiveText()
+                val layer = MessageWMTSFormatter().parseLayer(xml)
+                val capabilitiesXml = MessageWMTSFormatter().generateCapabilitiesXml(layer)
+                call.respondText(capabilitiesXml, ContentType.Text.Xml)
+            }
         }
+
     }.start(wait = true)
 }
