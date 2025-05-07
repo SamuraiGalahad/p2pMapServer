@@ -1,7 +1,6 @@
 package trotech.dao.redis
 
 import redis.clients.jedis.Jedis
-import java.util.*
 import kotlinx.coroutines.*
 
 class PeersRepository {
@@ -23,8 +22,8 @@ class PeersRepository {
         }
     }
 
-    fun addPeerId(peerID : UUID) {
-        jedis?.set("peer:${peerID.toString()}:last_active", System.currentTimeMillis().toString())
+    fun addPeerId(peerID : String) {
+        jedis.set("peer:${peerID}:last_active", System.currentTimeMillis().toString())
     }
 
     fun getActivePeers(): List<String> {

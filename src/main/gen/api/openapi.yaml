@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  description: Application API
+  title: Application API
+  version: 1.0.0
+servers:
+- url: http://0.0.0.0:8080
+paths:
+  /:
+    get:
+      description: Hello World!
+      responses:
+        "200":
+          content:
+            text/plain:
+              examples:
+                Example#1:
+                  value: Hello World!
+              schema:
+                type: string
+          description: OK
+      x-accepts: text/plain
+components:
+  schemas: {}
+

@@ -2,7 +2,7 @@ package trotech.dto.entities
 
 import jakarta.persistence.*
 import kotlinx.serialization.Serializable
-import trotech.trotech.UUIDSerializer
+import trotech.UUIDSerializer
 import java.util.*
 
 @Table(name = "peers")
