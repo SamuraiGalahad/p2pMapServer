@@ -8,12 +8,15 @@ import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
 import org.koin.ktor.ext.inject
 import trotech.dao.database.peers.findMatchingPeer
+import trotech.dao.database.peers.getMatrixSize
 import trotech.dao.redis.PeersRepository
+import trotech.dto.entities.TrackerAnnouncePeerInfo
+import trotech.service.usecase.algorithm.chooseBestPeersByLoad
 import trotech.service.usecase.metrics.CounterService
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-val activeSessions = ConcurrentHashMap<String, String>()
+val activeSessions = ConcurrentHashMap<String, ArrayList<String>>()
 
 @Serializable
 data class Response(
@@ -30,11 +33,51 @@ fun ApplicationCall.getRealIp(): String {
     return request.origin.remoteHost
 }
 
+@Serializable
+data class TrackerAskReply(
+    val host: String,
+    val port: Int,
+    val key: String,
+    val tiles: ArrayList<TrackerAskReplyTile>
+)
+
+@Serializable
+data class TrackerAskReplyTile(
+    val tileMatrix: String,
+    val tileColsAndRows: List<List<Int>>,
+    val format: String
+)
+
+fun generateMatrixIndices(n: Int, m: Int): List<List<Int>> {
+    return (0 until n).flatMap { row ->
+        (0 until m).map { col ->
+            listOf(col, row)
+        }
+    }
+}
+
+fun splitMatrixByRows(matrix: List<List<Int>>, k: Int): List<List<List<Int>>> {
+    val n = matrix.size
+    val chunkSize = (n + k - 1) / k  // округляем вверх
+    return matrix.chunked(chunkSize)
+}
+
 fun Route.peersRoutes() {
     val counter by application.inject<CounterService>()
 
+    val repository by application.inject<PeersRepository>()
+
+    var algorithm = 0
+
     val peersRepository = PeersRepository()
     route("/peers") {
+        post("/changealg") {
+            if (algorithm == 0) {
+                algorithm = 1
+            } else if (algorithm == 1) {
+                algorithm = 0
+            }
+        }
         get("/ask") {
             counter.addPeersAsk()
 
@@ -53,12 +96,58 @@ fun Route.peersRoutes() {
                 return@get
             }
 
-            val matchingPeerId = findMatchingPeer(layerId, tileMatrixSetId, peerid)
+            /**
+             * Пиры, у которых потенциально есть эти данные
+             */
+            val matchingPeerIds = findMatchingPeer(layerId, tileMatrixSetId, peerid)
 
-            if (matchingPeerId != null) {
+            val matricesSizes = getMatrixSize(tileMatrixSetId)
+
+            val peerInfos = matchingPeerIds.mapNotNull { repository.getFullPeerInfo(it) }
+
+            val selectedPeers : List<TrackerAnnouncePeerInfo> = if (algorithm == 0) {
+                chooseBestPeersByLoad(peerInfos, maxLoad = 3, count = 5)
+            } else {
+                chooseBestPeersByLoad(peerInfos, maxLoad = 3, count = 1)
+            }
+
+            val result = arrayListOf<TrackerAskReply>()
+
+            val peersTileMatrix = Array(selectedPeers.size) {arrayListOf<TrackerAskReplyTile>()}
+
+            for (size in matricesSizes) {
+                val indexes = generateMatrixIndices(size.second.second, size.second.first)
+                val splitByRows = splitMatrixByRows(indexes, selectedPeers.size)
+                for (i in selectedPeers.indices) {
+                    peersTileMatrix[i].add(TrackerAskReplyTile(size.first, splitByRows[i], "image/png"))
+                }
+            }
+
+            /**
+             * Нагрузка на пиров
+             */
+
+
+            for (i in selectedPeers.indices) {
                 val sessionKey = UUID.randomUUID().toString()
-                activeSessions[matchingPeerId] = sessionKey
-                call.respond(Response(host = "192.168.1.2", port = "9999", key = sessionKey))
+                val localPeerId = selectedPeers[i].peerId
+                if (activeSessions.containsKey(localPeerId)) {
+                    activeSessions[localPeerId]?.add(sessionKey)
+                } else {
+                    activeSessions[localPeerId] = arrayListOf<String>()
+                    activeSessions[localPeerId]?.add(sessionKey)
+                }
+                result.add(
+                    TrackerAskReply(
+                        "192.168.1.24",
+                        9999,
+                        sessionKey,
+                        peersTileMatrix[i]
+                    ))
+            }
+
+            if (result.isNotEmpty()) {
+                call.respond(result)
             } else {
                 call.respondText("No matching peer found", status = HttpStatusCode.NotFound)
             }
@@ -79,19 +168,23 @@ fun Route.peersRoutes() {
             peersRepository.addPeerId(peerid)
 
             if (activeSessions.containsKey(peerid)) {
-                val sessionKey = activeSessions[peerid] ?: ""
+                val sessionKeys = activeSessions[peerid] ?: listOf<String>()
 
-                call.respond(Response(host = "192.168.1.2", port = "9999", key = sessionKey))
+                call.respond(sessionKeys.map { Response("192.168.1.24",
+                    "9999", it) }.toList())
 
-                activeSessions.remove(peerid)
+                activeSessions[peerid]?.clear()
             } else {
                 call.respond(HttpStatusCode.NoContent, "Session key not found or already processed.")
             }
         }
     }
-    route("/status") {
-          post("/metadata") {
-
-          }
+    route("/speedtest") {
+        get("/download") {
+            call.respondText("http://192.168.1.24:8087/backend/garbage.php")
+        }
+        get("/upload") {
+            call.respondText("http://192.168.1.24:8087/backend/empty.php")
+        }
     }
 }

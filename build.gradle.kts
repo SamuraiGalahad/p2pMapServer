@@ -11,13 +11,14 @@ plugins {
     id("io.ktor.plugin") version "3.0.3"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0"
     kotlin("plugin.jpa") version "2.1.0"
+    id("com.google.devtools.ksp") version "2.1.20-1.0.32"
 }
 
 group = "trotech"
 version = "0.0.1"
 
 application {
-    mainClass.set("io.ktor.server.netty.EngineMain")
+    mainClass.set("trotech.ApplicationKt")
 
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
@@ -34,6 +35,14 @@ tasks.withType<KotlinCompile> {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+}
+
+tasks {
+    jar {
+        manifest {
+            attributes["Main-Class"] = "trotech.ApplicationKt"
+        }
+    }
 }
 
 dependencies {
@@ -78,4 +87,16 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages")
     implementation("io.ktor:ktor-server-cors")
     implementation("redis.clients:jedis:5.0.2")
+    implementation("io.insert-koin:koin-ktor:4.0.4")
+    implementation("io.insert-koin:koin-logger-slf4j:4.0.4")
+    testImplementation("io.kotest:kotest-runner-junit5:5.9.0")
+    implementation("com.github.loki4j:loki-logback-appender:1.5.1")
+    implementation("io.ktor:ktor-server-metrics-micrometer")
+    implementation("io.micrometer:micrometer-registry-prometheus:1.14.6")
+    implementation("io.ktor:ktor-server-auth:3.0.3")
+    implementation("io.ktor:ktor-server-auth-jwt:3.0.3")
+    implementation("com.auth0:java-jwt:4.4.0")
+    implementation("at.favre.lib:bcrypt:0.9.0")
+    implementation("org.jgrapht:jgrapht-core:1.5.1")
+    implementation("org.apache.commons:commons-math3:3.6.1")
 }

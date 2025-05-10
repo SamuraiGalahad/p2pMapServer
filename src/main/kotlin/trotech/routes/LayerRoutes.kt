@@ -6,17 +6,24 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import org.koin.ktor.ext.inject
+import org.slf4j.LoggerFactory
 import trotech.dao.database.peers.saveLayerForUser
 import trotech.dao.database.peers.saveTileMatrixSetForUser
 import trotech.dao.database.peers.saveUserIfNotExists
+import trotech.dao.redis.PeersRepository
 import trotech.dto.Layer
 import trotech.dto.TileMatrixSet
+import trotech.dto.entities.parsePeerInfo
 import trotech.service.usecase.dataload.parseLayer
 import trotech.service.usecase.dataload.parseTileMatrixSet
 import trotech.service.usecase.metrics.CounterService
+import java.io.File
 
 fun Route.layerRoutes() {
     val counter by application.inject<CounterService>()
+
+    val repository by application.inject<PeersRepository>()
+
     route("/announce") {
 
         post("/layer") {
@@ -44,6 +51,11 @@ fun Route.layerRoutes() {
                 throw er
             }
             println("Получил Layer от пользователя $userId:$userId")
+
+            val formatter by application.inject<MessageWMTSFormatter>()
+            val file = File("wmts.xml")
+            file.writeText(formatter.getCapabilitiesGen())
+
             call.respond(HttpStatusCode.OK)
         }
 
@@ -73,8 +85,21 @@ fun Route.layerRoutes() {
                 throw er
             }
 
+            val formatter by application.inject<MessageWMTSFormatter>()
+            val file = File("wmts.xml")
+            file.writeText(formatter.getCapabilitiesGen())
+
+
             println("Получил TileMatrixSet от пользователя $userId: $userId")
             call.respond(HttpStatusCode.OK)
+        }
+
+        post("/peer") {
+            val json = call.receive<String>()
+            val peerInfo = parsePeerInfo(json)
+            val logger = LoggerFactory.getLogger("AnnouncePeer")
+            repository.saveMetaInfo(peerInfo)
+            logger.info("New info:\n${peerInfo}")
         }
     }
 

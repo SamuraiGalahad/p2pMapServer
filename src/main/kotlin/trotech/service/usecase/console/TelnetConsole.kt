@@ -5,7 +5,7 @@ import trotech.service.usecase.administration.reloadDockerContainers
 import java.net.ServerSocket
 import java.net.Socket
 
-fun startTelnetServer(port: Int = 2323) {
+fun startTelnetServer(port: Int = 2324) {
     CoroutineScope(Dispatchers.IO).launch {
         val serverSocket = ServerSocket(port)
         println("Telnet-сервер запущен на порту $port")

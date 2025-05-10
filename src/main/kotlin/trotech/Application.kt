@@ -2,7 +2,6 @@ package trotech
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import io.ktor.http.*
 import trotech.dao.database.DatabaseFactory
 import trotech.dto.entities.Peer
 import io.ktor.serialization.kotlinx.json.*
@@ -22,14 +21,13 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.calllogging.*
-import io.ktor.server.response.*
 import io.ktor.server.sessions.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import org.koin.ktor.ext.inject
+import org.koin.java.KoinJavaComponent.inject
 import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 import org.slf4j.LoggerFactory
@@ -40,9 +38,12 @@ import trotech.routes.adminRoute
 import trotech.routes.authRoutes
 import trotech.routes.layerRoutes
 import trotech.routes.peersRoutes
+import trotech.service.usecase.algorithm.Graph
+import trotech.service.usecase.algorithm.startPeriodicGraphUpdate
 import trotech.service.usecase.console.startTelnetServer
-import trotech.service.usecase.dataload.MessageWMTSFormatter
 import trotech.service.usecase.metrics.metricsModule
+
+
 
 object UUIDSerializer : KSerializer<UUID> {
     override val descriptor = PrimitiveSerialDescriptor("UUID", PrimitiveKind.STRING)
@@ -68,13 +69,14 @@ val tokens = ArrayList<String>()
 
 val redisRepository = PeersRepository()
 
+
 @Serializable
 data class UserSession(val token: String)
 
 lateinit var server :  EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine. Configuration>
 
 fun main() {
-    server = embeddedServer(Netty, port = 8000) {
+    server = embeddedServer(Netty, port = 8123) {
 
         environment.monitor.subscribe(ApplicationStopping) {
             println("Stopping")
@@ -83,6 +85,7 @@ fun main() {
             while (isActive) {
                 delay(20_000)
                 redisRepository.cleanInactivePeersTask.run()
+
             }
         }
 
@@ -101,7 +104,7 @@ fun main() {
             exitCodeSupplier = { 0 }
         }
 
-        startTelnetServer(2323)
+        startTelnetServer(2324)
 
         install(Authentication) {
             jwt("auth-jwt") {
@@ -128,6 +131,15 @@ fun main() {
             adminRoute()
             layerRoutes()
             peersRoutes()
+        }
+
+        val graph: Graph by inject(Graph::class.java)
+
+        launch(Dispatchers.Default) {
+            startPeriodicGraphUpdate(
+                graph = graph,
+                intervalMillis = 30_000 // обновление каждые 30 секунд
+            )
         }
 
     }.start(wait = true)

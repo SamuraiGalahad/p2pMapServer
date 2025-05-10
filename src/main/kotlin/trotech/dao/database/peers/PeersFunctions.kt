@@ -98,16 +98,28 @@ fun checkPeerTileMatrixSetForLayer(peerid: String, layerId: String, tileMatrixSe
     }
 }
 
-fun findMatchingPeer(layerId: String, tileMatrixSetId: String, requestingUserId: String): String? {
+data class TileMatrixInfo(
+    val id : String,
+    val format : String,
+    val width : Int,
+    val height : Int
+)
+
+fun getMatrixSize(tileMatrixSetId: String): List<Pair<String, Pair<Int, Int>>> {
+    return transaction {
+        TileMatrices.select {
+            TileMatrices.tileMatrixSetId eq tileMatrixSetId
+        }.map { Pair(it[TileMatrices.id], Pair(it[TileMatrices.matrixWidth], it[TileMatrices.matrixHeight])) }
+
+    }
+}
+
+fun findMatchingPeer(layerId: String, tileMatrixSetId: String, requestingUserId: String): List<String> {
     return transaction {
         val usersWithTileMatrixSet = UserTileMatrixSets
             .select { UserTileMatrixSets.tileMatrixSetId eq tileMatrixSetId }
             .map { it[UserTileMatrixSets.userId] }
             .toSet()
-
-        if (usersWithTileMatrixSet.isEmpty()) {
-            return@transaction null
-        }
 
         val usersWithLayer = UserLayers
             .select { UserLayers.layerId eq layerId }
@@ -120,6 +132,6 @@ fun findMatchingPeer(layerId: String, tileMatrixSetId: String, requestingUserId:
         val filteredMatchingUsers = matchingUsers.filterNot { it == requestingUserId }
 
         // Возвращаем первого подходящего пользователя, если есть
-        filteredMatchingUsers.firstOrNull()
+        filteredMatchingUsers
     }
 }
